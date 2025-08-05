@@ -1,0 +1,54 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  # - "first_rules.yml"
+  # - "second_rules.yml"
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: 'pgai-api-gateway'
+    static_configs:
+      - targets: ['host.docker.internal:3000']
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+
+  - job_name: 'pgai-user-service'
+    static_configs:
+      - targets: ['host.docker.internal:3001']
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+
+  - job_name: 'pgai-connection-service'
+    static_configs:
+      - targets: ['host.docker.internal:3002']
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+
+  - job_name: 'pgai-schema-service'
+    static_configs:
+      - targets: ['host.docker.internal:3003']
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+
+  - job_name: 'pgai-view-service'
+    static_configs:
+      - targets: ['host.docker.internal:3004']
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+
+  - job_name: 'pgai-versioning-service'
+    static_configs:
+      - targets: ['host.docker.internal:3005']
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+
+  - job_name: 'pgai-documentation-service'
+    static_configs:
+      - targets: ['host.docker.internal:3006']
+    metrics_path: '/metrics'
+    scrape_interval: 10s
