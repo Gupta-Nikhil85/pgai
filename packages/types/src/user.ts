@@ -56,7 +56,8 @@ export interface ResetPasswordRequest {
 // JWT payload structure
 export interface JWTPayload {
   userId: string;
-  teamId: string;
+  email: string;
+  teamId?: string;
   role: string;
   permissions: string[];
   iat: number;
