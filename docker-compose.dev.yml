@@ -1,0 +1,184 @@
+version: '3.8'
+
+services:
+  # Database Services
+  postgres:
+    image: postgres:14-alpine
+    container_name: pgai-postgres-dev
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: pgai_dev
+    ports:
+      - '5434:5432'
+    volumes:
+      - postgres_data_dev:/var/lib/postgresql/data
+      - ./prisma/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d pgai_dev"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - pgai-network
+
+  redis:
+    image: redis:6-alpine
+    container_name: pgai-redis-dev
+    ports:
+      - '6380:6379'
+    command: redis-server --requirepass redis_password
+    volumes:
+      - redis_data_dev:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "redis_password", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - pgai-network
+
+  # User Management Service
+  user-service:
+    build:
+      context: .
+      dockerfile: ./apps/user-service/Dockerfile.dev
+    container_name: pgai-user-service-dev
+    ports:
+      - '3001:3001'
+    environment:
+      NODE_ENV: development
+      PORT: 3001
+      HOST: 0.0.0.0
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/pgai_dev
+      REDIS_URL: redis://:redis_password@redis:6379
+      JWT_SECRET: development-super-secret-jwt-key-for-testing-only-32-chars-minimum
+      JWT_REFRESH_SECRET: development-super-secret-refresh-key-for-testing-only-32-chars-minimum
+      JWT_EXPIRES_IN: 15m
+      JWT_REFRESH_EXPIRES_IN: 7d
+      CORS_ENABLED: "true"
+      CORS_ORIGIN: "http://localhost:3000,http://localhost:3001,http://localhost:5173"
+      LOG_LEVEL: debug
+      LOG_FORMAT: simple
+      ENABLE_METRICS: "true"
+      BCRYPT_ROUNDS: 10
+      RATE_LIMIT_WINDOW_MS: 900000
+      RATE_LIMIT_MAX_REQUESTS: 1000
+    volumes:
+      - ./apps/user-service/src:/app/src
+      - ./packages:/app/packages
+      - /app/node_modules
+      - /app/apps/user-service/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - pgai-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # API Gateway
+  api-gateway:
+    build:
+      context: .
+      dockerfile: ./apps/api-gateway/Dockerfile.dev
+    container_name: pgai-api-gateway-dev
+    ports:
+      - '3000:3000'
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      HOST: 0.0.0.0
+      JWT_SECRET: development-super-secret-jwt-key-for-testing-only-32-chars-minimum
+      JWT_EXPIRES_IN: 15m
+      JWT_REFRESH_EXPIRES_IN: 7d
+      CORS_ENABLED: "true"
+      CORS_ORIGIN: "*"
+      RATE_LIMIT_WINDOW_MS: 900000
+      RATE_LIMIT_MAX_REQUESTS: 1000
+      HELMET_ENABLED: "true"
+      TRUST_PROXY: "true"
+      LOG_LEVEL: debug
+      LOG_FORMAT: simple
+      ENABLE_METRICS: "true"
+      METRICS_PORT: 9090
+      HEALTH_CHECK_TIMEOUT: 5000
+      MAX_REQUEST_SIZE: 10mb
+      REQUEST_TIMEOUT_MS: 30000
+      USER_SERVICE_URL: http://user-service:3001
+      CACHE_TTL_SECONDS: 300
+      API_TITLE: "pgai API Gateway (Development)"
+      API_VERSION: "0.1.0"
+      API_DESCRIPTION: "API Gateway for PostgREST AI Orchestration Platform - Development Environment"
+      SERVICE_DISCOVERY_ENABLED: "false"
+    volumes:
+      - ./apps/api-gateway/src:/app/src
+      - ./packages:/app/packages
+      - /app/node_modules
+      - /app/apps/api-gateway/node_modules
+    depends_on:
+      user-service:
+        condition: service_healthy
+    networks:
+      - pgai-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # Monitoring Services
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: pgai-prometheus-dev
+    ports:
+      - '9090:9090'
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data_dev:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    networks:
+      - pgai-network
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: pgai-grafana-dev
+    ports:
+      - '3100:3000'
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - grafana_data_dev:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+    depends_on:
+      - prometheus
+    networks:
+      - pgai-network
+
+volumes:
+  postgres_data_dev:
+    name: pgai_postgres_data_dev
+  redis_data_dev:
+    name: pgai_redis_data_dev
+  prometheus_data_dev:
+    name: pgai_prometheus_data_dev
+  grafana_data_dev:
+    name: pgai_grafana_data_dev
+
+networks:
+  pgai-network:
+    name: pgai-network
+    driver: bridge

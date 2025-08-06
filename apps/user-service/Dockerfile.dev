@@ -1,0 +1,36 @@
+# Development Dockerfile for User Service
+FROM node:18-alpine
+
+# Install dependencies needed for building
+RUN apk add --no-cache libc6-compat curl
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+COPY pnpm-*.yaml ./
+
+# Install pnpm
+RUN npm install -g pnpm
+
+# Copy workspace files
+COPY packages ./packages
+COPY apps/user-service ./apps/user-service
+
+# Install dependencies
+RUN pnpm install --frozen-lockfile
+
+# Build shared packages
+RUN pnpm --filter @pgai/types build
+
+WORKDIR /app/apps/user-service
+
+# Expose port
+EXPOSE 3001
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=30s --retries=3 \
+  CMD curl -f http://localhost:3001/health/live || exit 1
+
+# Start development server
+CMD ["pnpm", "dev"]

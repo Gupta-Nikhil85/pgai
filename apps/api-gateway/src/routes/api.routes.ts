@@ -16,7 +16,7 @@ const router: express.Router = Router();
 router.use('/auth', 
   authRateLimiter,
   proxyService.createProxy('user-service', {
-    '^/auth': '/auth'  // Pass through auth routes directly
+    // No pathRewrite needed - Express router already handles the path stripping
   })
 );
 

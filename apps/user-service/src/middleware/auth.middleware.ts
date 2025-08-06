@@ -24,7 +24,7 @@ export const authenticate = (req: Request, res: Response, next: NextFunction): v
     // Create request context
     const context: RequestContext = {
       userId: payload.userId,
-      teamId: payload.teamId,
+      teamId: payload.teamId || '',
       role: payload.role,
       permissions: payload.permissions,
       ipAddress: req.ip || req.connection.remoteAddress || 'unknown',
@@ -183,7 +183,7 @@ export const optionalAuthenticate = (req: Request, res: Response, next: NextFunc
     // Create request context
     const context: RequestContext = {
       userId: payload.userId,
-      teamId: payload.teamId,
+      teamId: payload.teamId || '',
       role: payload.role,
       permissions: payload.permissions,
       ipAddress: req.ip || req.connection.remoteAddress || 'unknown',
