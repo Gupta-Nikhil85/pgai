@@ -1,0 +1,362 @@
+// Prisma schema for pgai platform
+// Based on our implementation.md database schema specifications
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Users and authentication
+model User {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email         String   @unique @db.VarChar(255)
+  passwordHash  String   @map("password_hash") @db.VarChar(255)
+  firstName     String?  @map("first_name") @db.VarChar(100)
+  lastName      String?  @map("last_name") @db.VarChar(100)
+  emailVerified Boolean  @default(false) @map("email_verified")
+  tokenVersion  Int      @default(0) @map("token_version")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  teamMembers            TeamMember[]
+  auditLogs              AuditLog[]
+  connections            Connection[]
+  views                  View[]
+  viewVersions           ViewVersion[]
+  endpointVersions       EndpointVersion[]
+  securityEvents         SecurityEvent[]
+  resolvedSecurityEvents SecurityEvent[] @relation("SecurityEventResolver")
+  createdApiKeys         ApiKey[] @relation("ApiKeyCreator")
+
+  @@map("users")
+}
+
+// Organizations and teams
+model Organization {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String   @db.VarChar(255)
+  plan      String   @default("free") @db.VarChar(50)
+  settings  Json     @default("{}")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  teams Team[]
+
+  @@map("organizations")
+}
+
+model Team {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String?  @map("organization_id") @db.Uuid
+  name           String   @db.VarChar(255)
+  settings       Json     @default("{}")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  organization     Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  members          TeamMember[]
+  connections      Connection[]
+  auditLogs        AuditLog[]
+  apiKeys          ApiKey[]
+  webhookEndpoints WebhookEndpoint[]
+
+  @@map("teams")
+}
+
+model TeamMember {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  teamId      String   @map("team_id") @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  role        String   @default("viewer") @db.VarChar(50)
+  permissions Json     @default("[]")
+  joinedAt    DateTime @default(now()) @map("joined_at") @db.Timestamptz
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@map("team_members")
+}
+
+// Database connections
+model Connection {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  teamId            String   @map("team_id") @db.Uuid
+  name              String   @db.VarChar(255)
+  type              String   @db.VarChar(50) // 'postgresql' or 'postgrest'
+  configEncrypted   String   @map("config_encrypted") @db.Text
+  status            String   @default("pending") @db.VarChar(50)
+  lastHealthCheck   DateTime? @map("last_health_check") @db.Timestamptz
+  createdBy         String   @map("created_by") @db.Uuid
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  team            Team               @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  creator         User               @relation(fields: [createdBy], references: [id])
+  healthChecks    ConnectionHealth[]
+  schemaCache     SchemaCache?
+  schemaChanges   SchemaChange[]
+  views           View[]
+  endpoints       Endpoint[]
+
+  @@unique([teamId, name])
+  @@map("connections")
+}
+
+model ConnectionHealth {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  connectionId     String   @map("connection_id") @db.Uuid
+  status           String   @db.VarChar(50)
+  responseTimeMs   Int?     @map("response_time_ms")
+  errorMessage     String?  @map("error_message") @db.Text
+  checkedAt        DateTime @default(now()) @map("checked_at") @db.Timestamptz
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  // Relations
+  connection Connection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@map("connection_health")
+}
+
+// Schema discovery and caching
+model SchemaCache {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  connectionId String   @unique @map("connection_id") @db.Uuid
+  schemaData   Json     @map("schema_data")
+  versionHash  String   @map("version_hash") @db.VarChar(255)
+  lastUpdated  DateTime @map("last_updated") @db.Timestamptz
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  // Relations
+  connection Connection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@map("schema_cache")
+}
+
+model SchemaChange {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  connectionId String   @map("connection_id") @db.Uuid
+  changeType   String   @map("change_type") @db.VarChar(50)
+  objectType   String   @map("object_type") @db.VarChar(50)
+  objectName   String   @map("object_name") @db.VarChar(255)
+  details      Json
+  detectedAt   DateTime @map("detected_at") @db.Timestamptz
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  // Relations
+  connection Connection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@map("schema_changes")
+}
+
+// Database views
+model View {
+  id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  connectionId        String   @map("connection_id") @db.Uuid
+  name                String   @db.VarChar(255)
+  schema              String   @db.VarChar(255)
+  description         String?  @db.Text
+  sqlDefinition       String   @map("sql_definition") @db.Text
+  queryBuilderConfig  Json?    @map("query_builder_config")
+  dependencies        String[] @db.VarChar(255)
+  performanceMetrics  Json?    @map("performance_metrics")
+  createdBy           String   @map("created_by") @db.Uuid
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  connection Connection    @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  creator    User          @relation(fields: [createdBy], references: [id])
+  versions   ViewVersion[]
+
+  @@unique([connectionId, schema, name])
+  @@map("views")
+}
+
+model ViewVersion {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  viewId        String   @map("view_id") @db.Uuid
+  version       String   @db.VarChar(50)
+  sqlDefinition String   @map("sql_definition") @db.Text
+  changeNotes   String?  @map("change_notes") @db.Text
+  createdBy     String   @map("created_by") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  // Relations
+  view    View @relation(fields: [viewId], references: [id], onDelete: Cascade)
+  creator User @relation(fields: [createdBy], references: [id])
+
+  @@unique([viewId, version])
+  @@map("view_versions")
+}
+
+// API endpoints
+model Endpoint {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  connectionId  String   @map("connection_id") @db.Uuid
+  path          String   @db.VarChar(500)
+  resource      String   @db.VarChar(255)
+  methods       String[] @db.VarChar(10)
+  version       String   @db.VarChar(50)
+  status        String   @default("active") @db.VarChar(50)
+  configuration Json     @default("{}")
+  documentation Json?
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  connection Connection        @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  versions   EndpointVersion[]
+
+  @@unique([connectionId, path, version])
+  @@map("endpoints")
+}
+
+model EndpointVersion {
+  id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  endpointId          String   @map("endpoint_id") @db.Uuid
+  version             String   @db.VarChar(50)
+  status              String   @default("draft") @db.VarChar(50)
+  changes             Json     @default("[]")
+  backwardCompatible  Boolean  @default(true) @map("backward_compatible")
+  deprecationDate     DateTime? @map("deprecation_date") @db.Timestamptz
+  sunsetDate          DateTime? @map("sunset_date") @db.Timestamptz
+  migrationGuide      String?  @map("migration_guide") @db.Text
+  usageMetrics        Json?    @map("usage_metrics")
+  createdBy           String   @map("created_by") @db.Uuid
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  endpoint Endpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+  creator  User     @relation(fields: [createdBy], references: [id])
+
+  @@unique([endpointId, version])
+  @@map("endpoint_versions")
+}
+
+// Audit logging
+model AuditLog {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  teamId       String?  @map("team_id") @db.Uuid
+  action       String   @db.VarChar(100)
+  resourceType String   @map("resource_type") @db.VarChar(100)
+  resourceId   String?  @map("resource_id") @db.Uuid
+  changes      Json?
+  ipAddress    String   @map("ip_address") @db.Inet
+  userAgent    String   @map("user_agent") @db.Text
+  success      Boolean  @default(true)
+  errorMessage String?  @map("error_message") @db.Text
+  metadata     Json     @default("{}")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  // Relations
+  user User  @relation(fields: [userId], references: [id])
+  team Team? @relation(fields: [teamId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([teamId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// Security events
+model SecurityEvent {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  type        String    @db.VarChar(50)
+  severity    String    @db.VarChar(20)
+  userId      String?   @map("user_id") @db.Uuid
+  ipAddress   String    @map("ip_address") @db.Inet
+  userAgent   String    @map("user_agent") @db.Text
+  description String    @db.Text
+  details     Json      @default("{}")
+  resolved    Boolean   @default(false)
+  resolvedBy  String?   @map("resolved_by") @db.Uuid
+  resolvedAt  DateTime? @map("resolved_at") @db.Timestamptz
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  user     User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  resolver User? @relation("SecurityEventResolver", fields: [resolvedBy], references: [id], onDelete: SetNull)
+
+  @@index([type])
+  @@index([severity])
+  @@index([createdAt])
+  @@map("security_events")
+}
+
+// API keys for external access
+model ApiKey {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  teamId      String    @map("team_id") @db.Uuid
+  name        String    @db.VarChar(255)
+  keyHash     String    @unique @map("key_hash") @db.VarChar(255)
+  permissions String[]  @db.VarChar(100)
+  lastUsed    DateTime? @map("last_used") @db.Timestamptz
+  expiresAt   DateTime? @map("expires_at") @db.Timestamptz
+  active      Boolean   @default(true)
+  createdBy   String    @map("created_by") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  team    Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  creator User @relation("ApiKeyCreator", fields: [createdBy], references: [id])
+
+  @@map("api_keys")
+}
+
+// Webhook endpoints
+model WebhookEndpoint {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  teamId    String   @map("team_id") @db.Uuid
+  url       String   @db.VarChar(500)
+  events    String[] @db.VarChar(100)
+  secret    String   @db.VarChar(255)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  team       Team               @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  deliveries WebhookDelivery[]
+
+  @@map("webhook_endpoints")
+}
+
+model WebhookDelivery {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  webhookEndpointId  String    @map("webhook_endpoint_id") @db.Uuid
+  eventType          String    @map("event_type") @db.VarChar(100)
+  payload            Json
+  attempts           Int       @default(0)
+  status             String    @default("pending") @db.VarChar(20)
+  responseCode       Int?      @map("response_code")
+  responseBody       String?   @map("response_body") @db.Text
+  nextRetry          DateTime? @map("next_retry") @db.Timestamptz
+  deliveredAt        DateTime? @map("delivered_at") @db.Timestamptz
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt          DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  webhookEndpoint WebhookEndpoint @relation(fields: [webhookEndpointId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([nextRetry])
+  @@map("webhook_deliveries")
+}
+

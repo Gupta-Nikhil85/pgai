@@ -19,7 +19,9 @@
     "test:unit": "turbo run test:unit",
     "test:integration": "turbo run test:integration",
     "test:e2e": "turbo run test:e2e",
+    "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
+    "db:reset": "prisma migrate reset",
     "db:seed": "prisma db seed",
     "db:studio": "prisma studio",
     "docker:up": "docker-compose up -d",
@@ -29,7 +31,9 @@
     "k8s:delete": "kubectl delete -k k8s/base"
   },
   "devDependencies": {
-    "@types/node": "^18.19.0",
+    "@types/jest": "^30.0.0",
+    "@types/bcrypt": "^5.0.2",
+    "@types/node": "^18.19.121",
     "@typescript-eslint/eslint-plugin": "^6.13.0",
     "@typescript-eslint/parser": "^6.13.0",
     "eslint": "^8.54.0",
@@ -44,7 +48,9 @@
     "typescript": "^5.3.0"
   },
   "dependencies": {
-    "@prisma/client": "^5.6.0"
+    "@prisma/client": "^5.6.0",
+    "bcrypt": "^5.1.1",
+    "tsx": "^4.6.0"
   },
   "engines": {
     "node": ">=18.0.0",
