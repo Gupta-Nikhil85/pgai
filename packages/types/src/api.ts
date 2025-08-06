@@ -51,6 +51,20 @@ export interface ServiceResponse<T = any> {
   };
 }
 
+// OpenAPI Schema Object (defined first for other interfaces)
+export interface OpenAPISchemaObject {
+  type?: string;
+  format?: string;
+  title?: string;
+  description?: string;
+  enum?: any[];
+  properties?: Record<string, OpenAPISchemaObject>;
+  required?: string[];
+  items?: OpenAPISchemaObject;
+  additionalProperties?: boolean | OpenAPISchemaObject;
+  example?: any;
+}
+
 // OpenAPI specification types
 export interface OpenAPISpec {
   openapi: string;
@@ -65,7 +79,7 @@ export interface OpenAPISpec {
   }[];
   paths: Record<string, PathItem>;
   components: {
-    schemas: Record<string, SchemaObject>;
+    schemas: Record<string, OpenAPISchemaObject>;
     securitySchemes: Record<string, SecurityScheme>;
   };
 }
@@ -97,7 +111,7 @@ export interface Parameter {
   description?: string;
   required?: boolean;
   deprecated?: boolean;
-  schema: SchemaObject;
+  schema: OpenAPISchemaObject;
   example?: any;
 }
 
@@ -114,7 +128,7 @@ export interface Response {
 }
 
 export interface MediaType {
-  schema?: SchemaObject;
+  schema?: OpenAPISchemaObject;
   example?: any;
   examples?: Record<string, Example>;
 }
@@ -129,19 +143,19 @@ export interface Header {
   description?: string;
   required?: boolean;
   deprecated?: boolean;
-  schema: SchemaObject;
+  schema: OpenAPISchemaObject;
 }
 
-export interface SchemaObject {
+export interface OpenAPIOpenAPISchemaObject {
   type?: string;
   format?: string;
   title?: string;
   description?: string;
   enum?: any[];
-  properties?: Record<string, SchemaObject>;
+  properties?: Record<string, OpenAPIOpenAPISchemaObject>;
   required?: string[];
-  items?: SchemaObject;
-  additionalProperties?: boolean | SchemaObject;
+  items?: OpenAPIOpenAPISchemaObject;
+  additionalProperties?: boolean | OpenAPIOpenAPISchemaObject;
   example?: any;
 }
 
