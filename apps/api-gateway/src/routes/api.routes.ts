@@ -16,7 +16,7 @@ const router: express.Router = Router();
 router.use('/auth', 
   authRateLimiter,
   proxyService.createProxy('user-service', {
-    '^/auth': '/auth'  // Pass through auth routes directly
+    '^/api/v1/auth': '/auth'  // Strip /api/v1 prefix and preserve /auth
   })
 );
 
@@ -32,7 +32,7 @@ router.use('/users',
   authenticate,
   userRateLimiter,
   proxyService.createProxy('user-service', {
-    '^/users': '/users'  // Pass through user routes directly
+    '^/api/v1/users': '/users'  // Strip /api/v1 prefix and preserve /users
   })
 );
 
