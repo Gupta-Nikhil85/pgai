@@ -1,0 +1,205 @@
+// Schema Service Database Models
+// This defines the metadata storage for schema discovery and change tracking
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Schema Discovery Metadata
+model SchemaSnapshot {
+  id            String   @id @default(uuid())
+  connectionId  String   @map("connection_id")
+  versionHash   String   @map("version_hash")
+  schemaData    Json     @map("schema_data")
+  objectCount   Json     @map("object_count")
+  discoveredAt  DateTime @map("discovered_at") @default(now())
+  discoveryDuration Int  @map("discovery_duration_ms")
+  
+  // Relationships
+  changes       SchemaChange[]
+  connection    Connection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  
+  @@map("schema_snapshots")
+  @@index([connectionId, discoveredAt])
+  @@index([versionHash])
+}
+
+// Schema Change Tracking
+model SchemaChange {
+  id                String           @id @default(uuid())
+  connectionId      String           @map("connection_id")
+  snapshotId        String?          @map("snapshot_id")
+  changeType        SchemaChangeType @map("change_type")
+  objectType        SchemaObjectType @map("object_type")
+  objectIdentifier  String           @map("object_identifier")
+  oldDefinition     Json?            @map("old_definition")
+  newDefinition     Json?            @map("new_definition")
+  impactLevel       ImpactLevel      @map("impact_level")
+  detectedAt        DateTime         @map("detected_at") @default(now())
+  reviewed          Boolean          @default(false)
+  reviewedBy        String?          @map("reviewed_by")
+  reviewedAt        DateTime?        @map("reviewed_at")
+  notes             String?
+  
+  // Relationships
+  connection        Connection      @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  snapshot          SchemaSnapshot? @relation(fields: [snapshotId], references: [id], onDelete: SetNull)
+  
+  @@map("schema_changes")
+  @@index([connectionId, detectedAt])
+  @@index([changeType, objectType])
+  @@index([reviewed, detectedAt])
+}
+
+// Connection metadata (references main connection table)
+model Connection {
+  id               String  @id @default(uuid())
+  name             String
+  host             String
+  port             Int
+  database         String
+  username         String
+  isActive         Boolean @map("is_active") @default(true)
+  createdAt        DateTime @map("created_at") @default(now())
+  updatedAt        DateTime @map("updated_at") @updatedAt
+  
+  // Schema service specific fields
+  changeDetectionEnabled Boolean @map("change_detection_enabled") @default(false)
+  lastSchemaUpdate       DateTime? @map("last_schema_update")
+  schemaCheckInterval    Int      @map("schema_check_interval") @default(300) // seconds
+  
+  // Relationships
+  snapshots        SchemaSnapshot[]
+  changes          SchemaChange[]
+  discoveryJobs    SchemaDiscoveryJob[]
+  
+  @@map("connections")
+  @@index([isActive])
+}
+
+// Schema Discovery Job Tracking
+model SchemaDiscoveryJob {
+  id             String              @id @default(uuid())
+  connectionId   String              @map("connection_id")
+  status         DiscoveryJobStatus
+  requestedBy    String              @map("requested_by")
+  requestedAt    DateTime            @map("requested_at") @default(now())
+  startedAt      DateTime?           @map("started_at")
+  completedAt    DateTime?           @map("completed_at")
+  duration       Int?                @map("duration_ms")
+  error          String?
+  forceRefresh   Boolean             @map("force_refresh") @default(false)
+  includeSystem  Boolean             @map("include_system") @default(false)
+  resultSnapshot String?             @map("result_snapshot_id")
+  
+  // Relationships
+  connection     Connection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  
+  @@map("schema_discovery_jobs")
+  @@index([connectionId, requestedAt])
+  @@index([status, requestedAt])
+}
+
+// WebSocket Connection Tracking
+model WebSocketSession {
+  id            String    @id @default(uuid())
+  socketId      String    @unique @map("socket_id")
+  userId        String    @map("user_id")
+  connectedAt   DateTime  @map("connected_at") @default(now())
+  disconnectedAt DateTime? @map("disconnected_at")
+  lastPingAt    DateTime  @map("last_ping_at") @default(now())
+  
+  // Subscriptions
+  subscriptions WebSocketSubscription[]
+  
+  @@map("websocket_sessions")
+  @@index([userId, connectedAt])
+}
+
+// WebSocket Subscription Management
+model WebSocketSubscription {
+  id            String    @id @default(uuid())
+  sessionId     String    @map("session_id")
+  connectionId  String    @map("connection_id")
+  subscribedAt  DateTime  @map("subscribed_at") @default(now())
+  unsubscribedAt DateTime? @map("unsubscribed_at")
+  
+  // Relationships
+  session       WebSocketSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  
+  @@map("websocket_subscriptions")
+  @@index([sessionId, connectionId])
+  @@unique([sessionId, connectionId])
+}
+
+// Cache Performance Metrics
+model CacheMetrics {
+  id            String   @id @default(uuid())
+  recordedAt    DateTime @map("recorded_at") @default(now())
+  hitRate       Float    @map("hit_rate")
+  totalEntries  Int      @map("total_entries")
+  memoryUsage   BigInt   @map("memory_usage_bytes")
+  evictionCount Int      @map("eviction_count")
+  
+  @@map("cache_metrics")
+  @@index([recordedAt])
+}
+
+// Schema Service Health Metrics
+model ServiceHealth {
+  id               String   @id @default(uuid())
+  recordedAt       DateTime @map("recorded_at") @default(now())
+  cacheStatus      String   @map("cache_status")
+  databaseStatus   String   @map("database_status")
+  activeConnections Int     @map("active_connections")
+  memoryUsageMb    Int      @map("memory_usage_mb")
+  uptimeSeconds    Int      @map("uptime_seconds")
+  
+  @@map("service_health")
+  @@index([recordedAt])
+}
+
+// Enums
+enum SchemaChangeType {
+  addition
+  modification
+  removal
+  
+  @@map("schema_change_type")
+}
+
+enum SchemaObjectType {
+  table
+  view
+  function
+  type
+  column
+  constraint
+  index
+  
+  @@map("schema_object_type")
+}
+
+enum ImpactLevel {
+  breaking
+  potentially_breaking
+  non_breaking
+  
+  @@map("impact_level")
+}
+
+enum DiscoveryJobStatus {
+  pending
+  running
+  completed
+  failed
+  cancelled
+  
+  @@map("discovery_job_status")
+}
