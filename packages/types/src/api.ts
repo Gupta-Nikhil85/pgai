@@ -5,7 +5,7 @@ import { HttpMethod, ApiResponse, PaginationParams, PaginatedResponse } from './
 // Request context passed through middleware
 export interface RequestContext {
   userId: string;
-  teamId: string;
+  teamId?: string;
   role: string;
   permissions: string[];
   ipAddress: string;
