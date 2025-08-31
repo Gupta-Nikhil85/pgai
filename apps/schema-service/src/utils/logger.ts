@@ -1,91 +1,78 @@
 import winston from 'winston';
 import { appConfig } from '../config';
 
-// Create base logger configuration
+// Custom log format
 const logFormat = winston.format.combine(
-  winston.format.timestamp(),
+  winston.format.timestamp({
+    format: 'YYYY-MM-DD HH:mm:ss',
+  }),
   winston.format.errors({ stack: true }),
-  winston.format.json(),
-  winston.format.printf(({ timestamp, level, message, context, service, ...meta }) => {
-    return JSON.stringify({
-      timestamp,
-      level,
-      message,
-      context,
-      service: service || appConfig.service.name,
-      version: appConfig.service.version,
-      ...meta,
-    });
+  winston.format.splat(),
+  winston.format.json()
+);
+
+// Simple format for development
+const developmentFormat = winston.format.combine(
+  winston.format.colorize(),
+  winston.format.timestamp({
+    format: 'HH:mm:ss',
+  }),
+  winston.format.printf(({ timestamp, level, message, service, ...meta }) => {
+    let output = `${timestamp} [${service || 'SchemaService'}] ${level}: ${message}`;
+    
+    // Add metadata if present
+    const metaStr = Object.keys(meta).length ? ` ${JSON.stringify(meta)}` : '';
+    return output + metaStr;
   })
 );
 
 // Create the main logger instance
 export const logger = winston.createLogger({
   level: appConfig.logging.level,
-  format: appConfig.logging.format === 'simple' 
-    ? winston.format.simple() 
-    : logFormat,
+  format: appConfig.logging.format === 'json' ? logFormat : developmentFormat,
   defaultMeta: {
+    environment: appConfig.env,
     service: appConfig.service.name,
     version: appConfig.service.version,
   },
-  transports: [
+    transports: [
     new winston.transports.Console({
-      format: appConfig.isDevelopment 
-        ? winston.format.combine(
-            winston.format.colorize(),
-            winston.format.simple()
-          )
-        : logFormat,
+      handleExceptions: true,
+      handleRejections: true,
     }),
   ],
 });
 
+// Add file transports for production
+if (appConfig.isProduction) {
+  logger.add(
+    new winston.transports.File({
+      filename: 'logs/error.log',
+      level: 'error',
+      format: logFormat,
+      maxsize: 5242880, // 5MB
+      maxFiles: 10,
+    })
+  );
+
+  logger.add(
+    new winston.transports.File({
+      filename: 'logs/combined.log',
+      format: logFormat,
+      maxsize: 5242880, // 5MB
+      maxFiles: 10,
+    })
+  );
+}
+
 // Create contextual logger factory
-export const createLogger = (context: string) => {
-  return {
-    info: (message: string, meta?: any) => 
-      logger.info(message, { context, ...meta }),
-    
-    warn: (message: string, meta?: any) => 
-      logger.warn(message, { context, ...meta }),
-    
-    error: (message: string, error?: Error, meta?: any) => 
-      logger.error(message, { 
-        context, 
-        error: error?.message,
-        stack: error?.stack,
-        ...meta 
-      }),
-    
-    debug: (message: string, meta?: any) => 
-      logger.debug(message, { context, ...meta }),
-  };
+export const createLogger = (service?: string): winston.Logger => {
+  return logger.child({
+    service: service || 'SchemaService',
+  });
 };
 
 // Request logger for Express middleware
-export const requestLogger = {
-  info: (message: string) => logger.info(message.trim()),
-};
-
-// Handle uncaught exceptions and unhandled rejections
-if (!appConfig.isTest) {
-  process.on('uncaughtException', (error: Error) => {
-    logger.error('Uncaught Exception', error, {
-      context: 'Process',
-      fatal: true,
-    });
-    
-    // Give logger time to write before exiting
-    setTimeout(() => process.exit(1), 1000);
-  });
-
-  process.on('unhandledRejection', (reason: any, promise: Promise<any>) => {
-    logger.error('Unhandled Rejection', reason instanceof Error ? reason : new Error(String(reason)), {
-      context: 'Process',
-      promise: promise.toString(),
-    });
-  });
-}
+export const requestLogger = createLogger('HTTP');
 
 export default logger;

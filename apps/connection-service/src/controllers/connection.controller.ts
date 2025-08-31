@@ -120,7 +120,6 @@ export class ConnectionController {
 
       // Check user connection limits
       const existingConnections = await this.databaseService.listConnections(userId, {
-        user_id: userId,
         limit: appConfig.connections.maxPerUser + 1,
       });
 

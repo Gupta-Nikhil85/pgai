@@ -3,42 +3,44 @@ import { appConfig } from '../config';
 
 // Define log format
 const logFormat = winston.format.combine(
-  winston.format.timestamp(),
+    winston.format.timestamp({
+    format: 'YYYY-MM-DD HH:mm:ss',
+  }),
   winston.format.errors({ stack: true }),
-  appConfig.isDevelopment
-    ? winston.format.combine(
-        winston.format.colorize(),
-        winston.format.simple()
-      )
-    : winston.format.json()
+  winston.format.splat(),
+  winston.format.json()
+);
+
+const developmentFormat = winston.format.combine(
+  winston.format.colorize(),
+  winston.format.timestamp({
+    format: 'HH:mm:ss',
+  }),
+  winston.format.printf(({ timestamp, level, message, service, ...meta }) => {
+    let output = `${timestamp} [${service || 'ConnectionService'}] ${level}: ${message}`;
+    
+    // Add metadata if present
+    const metaStr = Object.keys(meta).length ? ` ${JSON.stringify(meta)}` : '';
+    return output + metaStr;
+  })
 );
 
 // Create logger instance
 export const logger = winston.createLogger({
   level: appConfig.logging.level,
-  format: logFormat,
+  format: appConfig.logging.format === 'json' ? logFormat : developmentFormat,
   defaultMeta: {
     service: appConfig.service.name,
+    environment: appConfig.env,
     version: appConfig.service.version,
   },
   transports: [
     new winston.transports.Console({
-      format: appConfig.logging.format === 'json' 
-        ? winston.format.json() 
-        : winston.format.simple()
+      handleExceptions: true,
+      handleRejections: true,
     }),
   ],
 });
-
-// Specialized loggers for different components
-export const connectionLogger = logger.child({ component: 'connection' });
-export const poolLogger = logger.child({ component: 'pool' });
-export const securityLogger = logger.child({ component: 'security' });
-export const healthLogger = logger.child({ component: 'health' });
-export const metricsLogger = logger.child({ component: 'metrics' });
-
-// Request logger middleware
-export const requestLogger = logger.child({ component: 'request' });
 
 // Helper function for structured logging
 export const logError = (
@@ -73,7 +75,18 @@ export const logPerformance = (
 
 // Factory function to create component-specific loggers
 export const createLogger = (component: string): winston.Logger => {
-  return logger.child({ component });
+  return logger.child({ component: component || 'ConnectionService' });
 };
+
+
+// Specialized loggers for different components
+export const connectionLogger = createLogger('connection');
+export const poolLogger = createLogger('pool');
+export const securityLogger = createLogger('security');
+export const healthLogger = createLogger('health');
+export const metricsLogger = createLogger('metrics');
+
+// Request logger middleware
+export const requestLogger = createLogger('request');
 
 export default logger;

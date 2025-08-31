@@ -76,6 +76,7 @@ export const appConfig = {
   
   logging: {
     level: env.LOG_LEVEL,
+    format: env.LOG_FORMAT || 'json',
   },
   
   cors: {

@@ -115,6 +115,7 @@ export class UserService {
       userId: user.id,
       teamId: primaryTeamMembership.teamId,
       role: primaryTeamMembership.role,
+      email: user.email,
       permissions: ROLE_PERMISSIONS[primaryTeamMembership.role as keyof typeof ROLE_PERMISSIONS],
     };
 
@@ -177,6 +178,7 @@ export class UserService {
     // Generate new access token
     const tokenPayload: Omit<JWTPayload, 'iat' | 'exp'> = {
       userId: user.id,
+      email: user.email,
       teamId: primaryTeamMembership.teamId,
       role: primaryTeamMembership.role,
       permissions: ROLE_PERMISSIONS[primaryTeamMembership.role as keyof typeof ROLE_PERMISSIONS],

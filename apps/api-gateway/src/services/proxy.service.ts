@@ -211,10 +211,17 @@ export class ProxyService {
       changeOrigin: true,
       timeout: service.timeout,
       pathRewrite: pathRewrite || {},
+      selfHandleResponse: true,
       
       // Add authentication headers
       onProxyReq: (proxyReq, req: Request) => {
         const requestId = req.requestId || 'unknown';
+        // Add request ID
+        proxyReq.setHeader('x-request-id', requestId);
+        
+        // Add gateway identification
+        proxyReq.setHeader('x-forwarded-by', 'pgai-gateway');
+        proxyReq.setHeader('x-gateway-version', gatewayConfig.api.version);
         
         // Add downstream headers if user is authenticated
         if (req.auth) {
@@ -225,12 +232,18 @@ export class ProxyService {
           });
         }
 
-        // Add request ID
-        proxyReq.setHeader('x-request-id', requestId);
-        
-        // Add gateway identification
-        proxyReq.setHeader('x-forwarded-by', 'pgai-gateway');
-        proxyReq.setHeader('x-gateway-version', gatewayConfig.api.version);
+        // Handle body re-writing for JSON requests that were parsed by Express
+        if (
+          !proxyReq.writableEnded &&
+          req.body &&
+          Object.keys(req.body).length &&
+          (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH')
+        ) {
+            const bodyData = JSON.stringify(req.body);
+            proxyReq.setHeader('Content-Type', 'application/json');
+            proxyReq.setHeader('Content-Length', Buffer.byteLength(bodyData));
+            proxyReq.write(bodyData);
+        }
 
         activeConnections.inc();
         
@@ -298,8 +311,11 @@ export class ProxyService {
           error = new ServiceError(`Proxy error: ${err.message}`);
         }
 
-        const apiResponse = errorToApiResponse(error, requestId);
-        res.status((error as any).statusCode || 502).json(apiResponse);
+        // Only send error response if headers haven't been sent yet
+        if (!res.headersSent) {
+          const apiResponse = errorToApiResponse(error, requestId);
+          res.status((error as any).statusCode || 502).json(apiResponse);
+        }
       },
     };
 

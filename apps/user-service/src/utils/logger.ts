@@ -1,61 +1,75 @@
 import winston from 'winston';
 import { appConfig } from '../config';
 
-// Create logger with structured format following our engineering practices
+// Custom log format
 const logFormat = winston.format.combine(
-  winston.format.timestamp(),
+  winston.format.timestamp({
+    format: 'YYYY-MM-DD HH:mm:ss',
+  }),
   winston.format.errors({ stack: true }),
-  winston.format.json(),
-  winston.format.printf(({ timestamp, level, message, service, traceId, ...meta }) => {
-    return JSON.stringify({
-      timestamp,
-      level,
-      message,
-      service: service || 'user-service',
-      traceId,
-      ...meta,
-    });
+  winston.format.splat(),
+  winston.format.json()
+);
+
+// Simple format for development
+const developmentFormat = winston.format.combine(
+  winston.format.colorize(),
+  winston.format.timestamp({
+    format: 'HH:mm:ss',
+  }),
+  winston.format.printf(({ timestamp, level, message, service, ...meta }) => {
+    let output = `${timestamp} [${service || 'UserService'}] ${level}: ${message}`;
+    
+    // Add metadata if present
+    const metaStr = Object.keys(meta).length ? ` ${JSON.stringify(meta)}` : '';
+    return output + metaStr;
   })
 );
 
 export const logger = winston.createLogger({
   level: appConfig.logging.level,
-  format: logFormat,
+  format: appConfig.logging.format === 'json' ? logFormat : developmentFormat,
   defaultMeta: {
     service: 'user-service',
+    environment: appConfig.env,
     version: process.env.SERVICE_VERSION || '0.1.0',
   },
   transports: [
     new winston.transports.Console({
-      format: appConfig.isDevelopment 
-        ? winston.format.simple() 
-        : logFormat,
+      handleExceptions: true,
+      handleRejections: true,
     }),
   ],
 });
 
+// Add file transports for production
+if (appConfig.isProduction) {
+  logger.add(
+    new winston.transports.File({
+      filename: 'logs/error.log',
+      level: 'error',
+      format: logFormat,
+      maxsize: 5242880, // 5MB
+      maxFiles: 10,
+    })
+  );
+
+  logger.add(
+    new winston.transports.File({
+      filename: 'logs/combined.log',
+      format: logFormat,
+      maxsize: 5242880, // 5MB
+      maxFiles: 10,
+    })
+  );
+}
+
 // Helper function to create contextual loggers
-export const createLogger = (context: string) => {
-  return {
-    info: (message: string, meta?: any) => 
-      logger.info(message, { context, ...meta }),
-    warn: (message: string, meta?: any) => 
-      logger.warn(message, { context, ...meta }),
-    error: (message: string, error?: Error, meta?: any) => 
-      logger.error(message, { context, error: error?.stack, ...meta }),
-    debug: (message: string, meta?: any) => 
-      logger.debug(message, { context, ...meta }),
-  };
+export const createLogger = (service: string) => {
+  return logger.child({
+    service: service || 'user-service',
+  });
 };
 
 // Request logger for Express middleware
-export const requestLogger = winston.createLogger({
-  level: 'info',
-  format: winston.format.combine(
-    winston.format.timestamp(),
-    winston.format.json()
-  ),
-  transports: [
-    new winston.transports.Console(),
-  ],
-});
+export const requestLogger = createLogger('HTTP');

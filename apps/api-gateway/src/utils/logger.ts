@@ -12,7 +12,7 @@ const logFormat = winston.format.combine(
 );
 
 // Simple format for development
-const simpleFormat = winston.format.combine(
+const developmentFormat = winston.format.combine(
   winston.format.colorize(),
   winston.format.timestamp({
     format: 'HH:mm:ss',
@@ -29,7 +29,7 @@ const simpleFormat = winston.format.combine(
 // Create base logger
 const baseLogger = winston.createLogger({
   level: gatewayConfig.logging.level,
-  format: gatewayConfig.logging.format === 'json' ? logFormat : simpleFormat,
+  format: gatewayConfig.logging.format === 'json' ? logFormat : developmentFormat,
   defaultMeta: {
     service: 'APIGateway',
     environment: gatewayConfig.env,
